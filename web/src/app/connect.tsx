@@ -20,8 +20,12 @@ export function Connect() {
   }, []);
 
   useEffect(() => {
-    if (!address) return;
-    checkConnection(address);
+    if (address) {
+      setStatus('connecting');
+      checkConnection(address);
+    } else {
+      setStatus('disconnected');
+    }
   }, [address]);
 
   const checkConnection = async (walletAddress: string) => {
@@ -32,17 +36,20 @@ export function Connect() {
         .eq('wallet_address', walletAddress.toLowerCase())
         .single();
 
-      if (data) {
+      if (data && isConnected) {
         setStatus('connected');
+      } else {
+        setStatus('disconnected');
       }
     } catch (error) {
       console.error('Error checking connection:', error);
+      setStatus('disconnected');
+      // 適切なエラーメッセージを表示する
     }
   };
 
   const openTelegramBot = () => {
     if (!address) return;
-    // アドレスをBotに渡して自動的にconnectコマンドを実行
     window.open(`https://t.me/${process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME}?start=${address}`, '_blank');
   };
 
@@ -71,6 +78,10 @@ export function Connect() {
             <button onClick={() => disconnect()} className='px-4 py-2 text-red-600 hover:text-red-700 text-sm'>
               Disconnect Wallet
             </button>
+          </div>
+        ) : status === 'connecting' ? (
+          <div className='text-center'>
+            <p>Connecting...</p>
           </div>
         ) : (
           <div className='space-y-6 w-full text-center'>
