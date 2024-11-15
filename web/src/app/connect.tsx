@@ -67,7 +67,7 @@ export function Connect() {
 
       const script = document.createElement('script');
       script.src = 'https://telegram.org/js/telegram-widget.js?22';
-      script.setAttribute('data-telegram-login', process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME!);
+      script.setAttribute('data-telegram-login', 'phi_box_bot');
       script.setAttribute('data-size', 'large');
       script.setAttribute('data-lang', 'en');
       script.setAttribute('data-onauth', 'handleTelegramAuth');
