@@ -48,6 +48,7 @@ export function Connect() {
       script.setAttribute('data-telegram-login', 'phi_box_bot');
       script.setAttribute('data-size', 'large');
       script.setAttribute('data-radius', '8');
+      script.setAttribute('lang', 'en');
       script.setAttribute('data-onauth', 'handleTelegramAuth');
       script.setAttribute('data-request-access', 'write');
 
