@@ -1,4 +1,5 @@
 // supabase/functions/telegram-bot/index.ts
+
 import { serve } from 'std/http/server.ts';
 import { createClient } from '@supabase/supabase-js';
 
@@ -11,34 +12,67 @@ if (!telegramToken) {
 
 const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_ANON_KEY') ?? '');
 
-async function sendTelegramMessage(chatId: number, text: string, parseMode = 'Markdown') {
-  const response = await fetch(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: text,
-      parse_mode: parseMode,
-    }),
-  });
+interface ConnectedEvent {
+  telegramId: number;
+  walletAddress: string;
+  timestamp: string;
+}
 
-  if (!response.ok) {
-    throw new Error(`Telegram API error: ${await response.text()}`);
+interface RewardsDepositEvent {
+  receiver: string;
+  minter: string;
+  referral: string;
+  verifier: string;
+  transactionHash: string;
+}
+
+async function sendTelegramMessage(userId: number, text: string) {
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        chat_id: userId,
+        text: text,
+        parse_mode: 'Markdown',
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Telegram API error: ${errorText}`);
+    }
+  } catch (error) {
+    console.error(`Failed to send message to user ${userId}:`, error);
+    throw error;
   }
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   try {
     const { type, data } = await req.json();
 
-    // 連携完了時の通知
-    if (type === 'Connected') {
-      const { telegramId, walletAddress } = data;
-      await sendTelegramMessage(
-        parseInt(telegramId),
-        `
+    switch (type) {
+      case 'Connected': {
+        const { telegramId, walletAddress } = data as ConnectedEvent;
+
+        // 新規連携の登録
+        const { error: dbError } = await supabase.from('wallet_telegram_mapping').upsert({
+          wallet_address: walletAddress.toLowerCase(),
+          telegram_user_id: telegramId,
+        });
+
+        if (dbError) {
+          console.error('Database error:', dbError);
+          throw dbError;
+        }
+
+        // ウェルカムメッセージの送信
+        await sendTelegramMessage(
+          telegramId,
+          `
 ✅ *Successfully Connected!*
 
 Your Telegram account is now linked to:
@@ -49,34 +83,42 @@ You will receive notifications for:
 🔨 Minter Events
 🤝 Referral Events
 ✅ Verifier Events
-        `,
-      );
-      return new Response('Welcome message sent', { status: 200 });
-    }
+          `,
+        );
 
-    // RewardsDeposit イベントの処理
-    if (type === 'RewardsDeposit') {
-      const { receiver, minter, referral, verifier, transactionHash } = data;
-      const addresses = [receiver, minter, referral, verifier];
-      const uniqueAddresses = [...new Set(addresses)];
+        return new Response('Welcome message sent', { status: 200 });
+      }
 
-      for (const address of uniqueAddresses) {
-        const { data: userData } = await supabase
-          .from('wallet_telegram_mapping')
-          .select('telegram_chat_id')
-          .eq('wallet_address', address.toLowerCase())
-          .single();
+      case 'RewardsDeposit': {
+        const { receiver, minter, referral, verifier, transactionHash } = data as RewardsDepositEvent;
+        const addresses = [receiver, minter, referral, verifier];
+        const uniqueAddresses = [...new Set(addresses)];
 
-        if (userData) {
-          let role = '';
-          if (address === receiver) role = '📥 Receiver';
-          else if (address === minter) role = '🔨 Minter';
-          else if (address === referral) role = '🤝 Referral';
-          else if (address === verifier) role = '✅ Verifier';
+        // 各アドレスに対応するユーザーに通知を送信
+        for (const address of uniqueAddresses) {
+          const { data: userData, error: dbError } = await supabase
+            .from('wallet_telegram_mapping')
+            .select('telegram_user_id')
+            .eq('wallet_address', address.toLowerCase())
+            .single();
 
-          await sendTelegramMessage(
-            parseInt(userData.telegram_chat_id),
-            `
+          if (dbError) {
+            console.error(`Database error for address ${address}:`, dbError);
+            continue;
+          }
+
+          if (userData) {
+            // ロールの判定
+            let role = '';
+            if (address === receiver) role = '📥 Receiver';
+            else if (address === minter) role = '🔨 Minter';
+            else if (address === referral) role = '🤝 Referral';
+            else if (address === verifier) role = '✅ Verifier';
+
+            try {
+              await sendTelegramMessage(
+                userData.telegram_user_id,
+                `
 🎉 *New RewardsDeposit Event* 🎉
 ${role ? `\nYou are the ${role}` : ''}
 
@@ -87,16 +129,22 @@ ${role ? `\nYou are the ${role}` : ''}
 - Verifier: \`${verifier}\`
 
 🔗 [View on Etherscan](https://etherscan.io/tx/${transactionHash})
-            `,
-          );
+                `,
+              );
+            } catch (error) {
+              console.error(`Failed to send notification to user ${userData.telegram_user_id}:`, error);
+            }
+          }
         }
-      }
-      return new Response('Notifications sent', { status: 200 });
-    }
 
-    return new Response('OK', { status: 200 });
+        return new Response('Notifications sent', { status: 200 });
+      }
+
+      default:
+        return new Response('Invalid event type', { status: 400 });
+    }
   } catch (error) {
     console.error('Function error:', error);
-    return new Response('Error', { status: 500 });
+    return new Response(error.message, { status: 500 });
   }
 });
