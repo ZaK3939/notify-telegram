@@ -84,14 +84,6 @@ export function Connect() {
               telegramId: user.id,
               walletAddress: address,
               timestamp: timestamp,
-              //   userData: {
-              //     firstName: user.first_name,
-              //     username: user.username,
-              //   },
-              //   signature: {
-              //     message: messageToSign,
-              //     signature: signature,
-              //   },
             },
           }),
         });
@@ -143,7 +135,7 @@ export function Connect() {
     script.async = true;
     script.src = 'https://telegram.org/js/telegram-widget.js?22';
 
-    script.setAttribute('data-telegram-login', '6970575718');
+    script.setAttribute('data-telegram-login', 'phi_box_bot');
     script.setAttribute('data-size', 'large');
     script.setAttribute('data-onauth', 'handleTelegramAuth(user)');
     script.setAttribute('data-request-access', 'write');
