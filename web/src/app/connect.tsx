@@ -1,6 +1,7 @@
+// src/app/connect.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount, useSignMessage } from 'wagmi';
 import { createClient } from '@supabase/supabase-js';
 import { verifyMessage } from 'viem';
@@ -20,10 +21,15 @@ declare global {
 }
 
 export function Connect() {
+  const [mounted, setMounted] = useState(false);
   const { address, isConnected } = useAccount();
   const { signMessageAsync } = useSignMessage();
   const [signature, setSignature] = useState<`0x${string}`>();
   const [message, setMessage] = useState<string>();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const signMessage = async () => {
     if (!address) return;
@@ -33,7 +39,6 @@ export function Connect() {
       setMessage(messageToSign);
       const sig = (await signMessageAsync({ message: messageToSign })) as `0x${string}`;
 
-      // viemで署名を検証
       const valid = await verifyMessage({
         address: address as `0x${string}`,
         message: messageToSign,
@@ -51,8 +56,10 @@ export function Connect() {
   };
 
   useEffect(() => {
+    if (!mounted || !signature) return;
+
     const container = document.getElementById('telegram-login');
-    if (container && isConnected && signature) {
+    if (container && isConnected) {
       container.innerHTML = '';
 
       const script = document.createElement('script');
@@ -78,6 +85,7 @@ export function Connect() {
         if (!valid) {
           throw new Error('Signature verification failed');
         }
+
         const { error } = await supabase.from('wallet_telegram_mapping').insert({
           wallet_address: address.toLowerCase(),
           telegram_chat_id: user.id.toString(),
@@ -85,6 +93,7 @@ export function Connect() {
 
         if (error) throw error;
 
+        // 連携完了通知の送信
         await fetch('/functions/v1/telegram-bot', {
           method: 'POST',
           headers: {
@@ -110,7 +119,9 @@ export function Connect() {
         container.innerHTML = '';
       }
     };
-  }, [address, isConnected, signature, message]);
+  }, [mounted, address, isConnected, signature, message]);
+
+  if (!mounted) return null;
 
   return (
     <div className='space-y-8 w-full max-w-md'>
@@ -120,9 +131,9 @@ export function Connect() {
         <button onClick={signMessage} className='w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600'>
           Sign to verify wallet ownership
         </button>
-      ) : (
+      ) : signature ? (
         <div id='telegram-login' className='flex justify-center' />
-      )}
+      ) : null}
 
       {address && <div className='text-sm text-gray-600 text-center'>Connected wallet: {address}</div>}
     </div>
