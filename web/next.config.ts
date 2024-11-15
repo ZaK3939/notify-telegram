@@ -15,7 +15,10 @@ const nextConfig = {
   },
   reactStrictMode: true,
   webpack: (config) => {
-    config.resolve.fallback = { crypto: require.resolve('crypto-browserify') };
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      crypto: require.resolve('crypto-browserify'),
+    };
     return config;
   },
 };
