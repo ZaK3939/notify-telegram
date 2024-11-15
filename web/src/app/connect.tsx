@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAccount, useSignMessage, useConnect, useDisconnect } from 'wagmi';
+import { useAccount, useConnect, useDisconnect } from 'wagmi';
 import { createClient } from '@supabase/supabase-js';
 // import { verifyMessage } from 'viem';
 import { injected } from 'wagmi/connectors';
@@ -16,22 +16,10 @@ interface TelegramUser {
   hash: string;
 }
 
-// Telegramの型定義
 declare global {
   interface Window {
-    Telegram?: {
-      Login: {
-        auth: (
-          options: {
-            bot_id: string;
-            element: HTMLElement;
-            onAuth: (user: TelegramUser) => void;
-            request_access?: boolean;
-          },
-          script?: HTMLScriptElement,
-        ) => void;
-      };
-    };
+    TelegramLoginWidget?: unknown;
+    onTelegramAuth?: (user: TelegramUser) => void;
   }
 }
 
@@ -43,7 +31,7 @@ export function Connect() {
   const { address, isConnected } = useAccount();
   const { connect } = useConnect();
   const { disconnect } = useDisconnect();
-  const { signMessageAsync } = useSignMessage();
+  // const { signMessageAsync } = useSignMessage();
 
   useEffect(() => {
     setMounted(true);
@@ -55,91 +43,77 @@ export function Connect() {
     const container = document.getElementById('telegram-login');
     if (!container) return;
 
-    // 既存のコンテンツをクリア
+    // コンテナをクリア
     container.innerHTML = '';
 
-    // スクリプトの読み込み
-    const script = document.createElement('script');
-    script.src = 'https://telegram.org/js/telegram-widget.js?22';
-    script.async = true;
+    // グローバルコールバック関数を設定
+    window.onTelegramAuth = async (user: TelegramUser) => {
+      console.log('Telegram auth received:', user);
 
-    // スクリプトがロードされたら初期化
-    script.onload = () => {
       try {
-        if (!window.Telegram?.Login) {
-          throw new Error('Telegram Login not available');
+        if (!address) {
+          throw new Error('Wallet not connected');
         }
 
-        const loginButton = document.createElement('div');
-        container.appendChild(loginButton);
+        // DBへの保存
+        const { error: dbError } = await supabase.from('wallet_telegram_mapping').upsert({
+          wallet_address: address.toLowerCase(),
+          telegram_user_id: user.id,
+        });
 
-        window.Telegram.Login.auth(
-          {
-            bot_id: '7338204979',
-            element: loginButton,
-            onAuth: async (user: TelegramUser) => {
-              console.log('Telegram auth received:', user);
+        if (dbError) throw dbError;
 
-              try {
-                if (!address) {
-                  throw new Error('Wallet not connected');
-                }
-
-                // DBへの保存
-                const { error: dbError } = await supabase.from('wallet_telegram_mapping').upsert({
-                  wallet_address: address.toLowerCase(),
-                  telegram_user_id: user.id,
-                });
-
-                if (dbError) throw dbError;
-
-                // Supabase Function呼び出し
-                const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/telegram-bot`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-                  },
-                  body: JSON.stringify({
-                    type: 'Connected',
-                    data: {
-                      telegramId: user.id,
-                      walletAddress: address,
-                      timestamp: new Date().toISOString(),
-                    },
-                  }),
-                });
-
-                if (!response.ok) {
-                  throw new Error('Failed to send telegram notification');
-                }
-
-                setSuccess(true);
-              } catch (err) {
-                console.error('Connection error:', err);
-                setError(err instanceof Error ? err.message : 'Failed to connect');
-              }
-            },
-            request_access: true,
+        // Supabase Function呼び出し
+        const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/telegram-bot`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
           },
-          script,
-        );
+          body: JSON.stringify({
+            type: 'Connected',
+            data: {
+              telegramId: user.id,
+              walletAddress: address,
+              timestamp: new Date().toISOString(),
+            },
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to send telegram notification');
+        }
+
+        setSuccess(true);
       } catch (err) {
-        console.error('Widget initialization error:', err);
-        setError('Failed to initialize Telegram login');
+        console.error('Connection error:', err);
+        setError(err instanceof Error ? err.message : 'Failed to connect');
       }
     };
 
+    // スクリプトエレメントの作成
+    const script = document.createElement('script');
+    script.src = 'https://telegram.org/js/telegram-widget.js?22';
+    script.setAttribute('data-telegram-login', 'phi_box_bot');
+    script.setAttribute('data-size', 'medium');
+    script.setAttribute('data-userpic', 'true');
+    script.setAttribute('data-onauth', 'onTelegramAuth');
+    script.setAttribute('data-request-access', 'write');
+    script.async = true;
+
     script.onerror = () => {
+      console.error('Failed to load Telegram widget');
       setError('Failed to load Telegram login widget');
     };
 
+    // スクリプトを追加
     container.appendChild(script);
 
     return () => {
       container.innerHTML = '';
+      window.onTelegramAuth = undefined;
     };
-  }, [mounted, address, isConnected, signMessageAsync]);
+  }, [mounted, address, isConnected]);
 
   if (!mounted) return null;
 
