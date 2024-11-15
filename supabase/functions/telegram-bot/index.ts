@@ -1,5 +1,3 @@
-// supabase/functions/telegram-bot/index.ts
-
 import { serve } from 'std/http/server.ts';
 import { createClient } from '@supabase/supabase-js';
 
@@ -26,6 +24,12 @@ interface RewardsDepositEvent {
   transactionHash: string;
 }
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
 async function sendTelegramMessage(userId: number, text: string) {
   try {
     const response = await fetch(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
@@ -51,28 +55,51 @@ async function sendTelegramMessage(userId: number, text: string) {
 }
 
 serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
   try {
     const { type, data } = await req.json();
 
     switch (type) {
       case 'Connected': {
         const { telegramId, walletAddress } = data as ConnectedEvent;
+        const normalizedWalletAddress = walletAddress.toLowerCase();
 
-        // 新規連携の登録
-        const { error: dbError } = await supabase.from('wallet_telegram_mapping').upsert({
-          wallet_address: walletAddress.toLowerCase(),
-          telegram_user_id: telegramId,
-        });
+        try {
+          // 既存のマッピングを削除
+          const { error: deleteError } = await supabase
+            .from('wallet_telegram_mapping')
+            .delete()
+            .or(`wallet_address.eq.${normalizedWalletAddress},telegram_user_id.eq.${telegramId}`);
 
-        if (dbError) {
-          console.error('Database error:', dbError);
-          throw dbError;
-        }
+          if (deleteError) {
+            console.error('Database delete error:', deleteError);
+          }
 
-        // ウェルカムメッセージの送信
-        await sendTelegramMessage(
-          telegramId,
-          `
+          // 少し待機して新しいマッピングを登録
+          await new Promise((resolve) => setTimeout(resolve, 200));
+
+          const { error: upsertError } = await supabase.from('wallet_telegram_mapping').upsert(
+            {
+              wallet_address: normalizedWalletAddress,
+              telegram_user_id: telegramId,
+            },
+            {
+              onConflict: 'wallet_address,telegram_user_id',
+              ignoreDuplicates: false,
+            },
+          );
+
+          if (upsertError) {
+            throw upsertError;
+          }
+
+          // ウェルカムメッセージの送信
+          await sendTelegramMessage(
+            telegramId,
+            `
 ✅ *Successfully Connected!*
 
 Your Telegram account is now linked to:
@@ -83,10 +110,20 @@ You will receive notifications for:
 🔨 Minter Events
 🤝 Referral Events
 ✅ Verifier Events
-          `,
-        );
+            `,
+          );
 
-        return new Response('Welcome message sent', { status: 200 });
+          return new Response(JSON.stringify({ success: true, message: 'Welcome message sent' }), {
+            status: 200,
+            headers: {
+              ...corsHeaders,
+              'Content-Type': 'application/json',
+            },
+          });
+        } catch (error) {
+          console.error('Database error:', error);
+          throw error;
+        }
       }
 
       case 'RewardsDeposit': {
@@ -94,7 +131,6 @@ You will receive notifications for:
         const addresses = [receiver, minter, referral, verifier];
         const uniqueAddresses = [...new Set(addresses)];
 
-        // 各アドレスに対応するユーザーに通知を送信
         for (const address of uniqueAddresses) {
           const { data: userData, error: dbError } = await supabase
             .from('wallet_telegram_mapping')
@@ -108,7 +144,6 @@ You will receive notifications for:
           }
 
           if (userData) {
-            // ロールの判定
             let role = '';
             if (address === receiver) role = '📥 Receiver';
             else if (address === minter) role = '🔨 Minter';
@@ -137,14 +172,38 @@ ${role ? `\nYou are the ${role}` : ''}
           }
         }
 
-        return new Response('Notifications sent', { status: 200 });
+        return new Response(JSON.stringify({ success: true, message: 'Notifications sent' }), {
+          status: 200,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+          },
+        });
       }
 
       default:
-        return new Response('Invalid event type', { status: 400 });
+        return new Response(JSON.stringify({ success: false, error: 'Invalid event type' }), {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+          },
+        });
     }
   } catch (error) {
     console.error('Function error:', error);
-    return new Response(error.message, { status: 500 });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Internal server error',
+      }),
+      {
+        status: 500,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        },
+      },
+    );
   }
 });
