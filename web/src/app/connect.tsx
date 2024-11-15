@@ -47,87 +47,116 @@ export function Connect() {
     if (container) {
       container.innerHTML = '';
 
+      // Create Telegram Login Widget with updated options
       const script = document.createElement('script');
       script.async = true;
       script.src = 'https://telegram.org/js/telegram-widget.js?22';
+
+      // Bot username
       script.setAttribute('data-telegram-login', 'phi_box_bot');
-      script.setAttribute('data-size', 'large');
-      script.setAttribute('data-radius', '8');
-      script.setAttribute('data-request-access', 'write');
+
+      // Medium size button (as selected in the image)
+      script.setAttribute('data-size', 'medium');
+
+      // Show user photo (checked in the image)
+      script.setAttribute('data-userpic', 'true');
+
+      // Default corner radius (as selected in the image)
+      // No need to set data-radius as it defaults to the standard value
+
+      // Callback authorization (as selected in the image)
       script.setAttribute('data-onauth', 'handleTelegramAuth');
 
+      // Request access to send messages (checked in the image)
+      script.setAttribute('data-request-access', 'write');
+
       container.appendChild(script);
-    }
 
-    window.handleTelegramAuth = async (user: TelegramUser) => {
-      if (!address || connecting) return;
+      // Define callback function
+      window.handleTelegramAuth = async (user: TelegramUser) => {
+        if (!address || connecting) return;
 
-      try {
-        setConnecting(true);
-        setError(undefined);
+        try {
+          setConnecting(true);
+          setError(undefined);
 
-        // メッセージの署名
-        const nonce = Math.floor(Math.random() * 1000000);
-        const message = `Connect Telegram with ${address} (nonce: ${nonce})`;
-        const signature = await signMessageAsync({ message });
+          console.log('Telegram auth data:', {
+            name: user.first_name,
+            lastName: user.last_name,
+            username: user.username,
+            id: user.id,
+            photoUrl: user.photo_url,
+          });
 
-        // 署名の検証
-        const valid = await verifyMessage({
-          address: address as `0x${string}`,
-          message,
-          signature,
-        });
+          // メッセージの署名
+          const nonce = Math.floor(Math.random() * 1000000);
+          const message = `Connect Telegram with ${address} (nonce: ${nonce})`;
+          const signature = await signMessageAsync({ message });
 
-        if (!valid) {
-          throw new Error('Wallet signature verification failed');
-        }
+          // 署名の検証
+          const valid = await verifyMessage({
+            address: address as `0x${string}`,
+            message,
+            signature,
+          });
 
-        // DBへの保存
-        const { error: dbError } = await supabase.from('wallet_telegram_mapping').upsert({
-          wallet_address: address.toLowerCase(),
-          telegram_user_id: user.id,
-        });
+          if (!valid) {
+            throw new Error('Wallet signature verification failed');
+          }
 
-        if (dbError) throw dbError;
+          // DBへの保存
+          const { error: dbError } = await supabase.from('wallet_telegram_mapping').upsert({
+            wallet_address: address.toLowerCase(),
+            telegram_user_id: user.id,
+          });
 
-        // Supabase Edge Functionを呼び出してTelegram通知を送信
-        const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/telegram-bot`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify({
-            type: 'Connected',
-            data: {
-              telegramId: user.id,
-              walletAddress: address,
-              timestamp: new Date().toISOString(),
+          if (dbError) throw dbError;
+
+          // Supabase Function呼び出し
+          const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/telegram-bot`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
             },
-          }),
-        });
+            body: JSON.stringify({
+              type: 'Connected',
+              data: {
+                telegramId: user.id,
+                walletAddress: address,
+                timestamp: new Date().toISOString(),
+                // オプションでユーザー情報も送信
+                userData: {
+                  firstName: user.first_name,
+                  lastName: user.last_name,
+                  username: user.username,
+                  photoUrl: user.photo_url,
+                },
+              },
+            }),
+          });
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          console.error('Notification error:', errorData);
-          throw new Error('Failed to send telegram notification');
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            console.error('Notification error:', errorData);
+            throw new Error('Failed to send telegram notification');
+          }
+
+          setSuccess(true);
+        } catch (err) {
+          console.error('Connection error:', err);
+          setError(err instanceof Error ? err.message : 'Failed to connect');
+        } finally {
+          setConnecting(false);
         }
+      };
 
-        setSuccess(true);
-      } catch (err) {
-        console.error('Connection error:', err);
-        setError(err instanceof Error ? err.message : 'Failed to connect');
-      } finally {
-        setConnecting(false);
-      }
-    };
-
-    return () => {
-      const container = document.getElementById('telegram-login');
-      if (container) {
-        container.innerHTML = '';
-      }
-    };
+      return () => {
+        if (container) {
+          container.innerHTML = '';
+        }
+      };
+    }
   }, [mounted, address, isConnected, connecting, signMessageAsync]);
 
   if (!mounted) return null;
