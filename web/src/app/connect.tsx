@@ -73,7 +73,7 @@ export function Connect() {
 
       try {
         window.Telegram.Login.auth({
-          bot_id: 'phi_box_bot',
+          bot_id: '7338204979',
           element: loginButton,
           request_access: true,
           onAuth: async (user) => {
