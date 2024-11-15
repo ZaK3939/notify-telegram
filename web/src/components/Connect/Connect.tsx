@@ -84,14 +84,14 @@ export function Connect() {
               telegramId: user.id,
               walletAddress: address,
               timestamp: timestamp,
-              userData: {
-                firstName: user.first_name,
-                username: user.username,
-              },
-              signature: {
-                message: messageToSign,
-                signature: signature,
-              },
+              //   userData: {
+              //     firstName: user.first_name,
+              //     username: user.username,
+              //   },
+              //   signature: {
+              //     message: messageToSign,
+              //     signature: signature,
+              //   },
             },
           }),
         });
