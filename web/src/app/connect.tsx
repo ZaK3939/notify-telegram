@@ -69,6 +69,7 @@ export function Connect() {
       script.src = 'https://telegram.org/js/telegram-widget.js?22';
       script.setAttribute('data-telegram-login', process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME!);
       script.setAttribute('data-size', 'large');
+      script.setAttribute('data-lang', 'en');
       script.setAttribute('data-onauth', 'handleTelegramAuth');
       script.setAttribute('data-request-access', 'write');
       script.setAttribute('data-radius', '8');
@@ -98,7 +99,7 @@ export function Connect() {
         if (error) throw error;
 
         // 連携完了通知の送信
-        await fetch('/functions/v1/telegram-bot', {
+        const response = await fetch('/functions/v1/telegram-bot', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -108,10 +109,23 @@ export function Connect() {
             data: {
               telegramId: user.id,
               walletAddress: address,
+              timestamp: new Date().toISOString(),
             },
           }),
         });
 
+        if (!response.ok) throw new Error('Failed to send telegram notification');
+
+        // 成功メッセージを表示
+        const container = document.getElementById('telegram-login');
+        if (container) {
+          container.innerHTML = `
+        <div class="text-center text-green-600">
+          <p class="font-bold">✅ Successfully Connected!</p>
+          <p class="text-sm mt-2">Check your Telegram for confirmation.</p>
+        </div>
+      `;
+        }
         console.log('Successfully connected Telegram and EOA');
       } catch (error) {
         console.error('Connection error:', error);
