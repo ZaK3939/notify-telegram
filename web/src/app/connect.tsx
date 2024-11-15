@@ -16,9 +16,10 @@ interface TelegramUser {
   hash: string;
 }
 
+// 型安全なグローバル定義
 declare global {
   interface Window {
-    onTelegramAuth: (user: TelegramUser) => void;
+    onTelegramAuth: ((user: TelegramUser) => void) | null;
   }
 }
 
@@ -42,9 +43,18 @@ export function Connect() {
     const container = document.getElementById('telegram-login');
     if (!container) return;
 
-    container.innerHTML = '';
+    // クリーンアップ用の関数
+    const cleanup = () => {
+      container.innerHTML = '';
+      // 型安全なクリーンアップ
+      window.onTelegramAuth = null;
+    };
 
-    window.onTelegramAuth = async (user) => {
+    // 初期クリーンアップ
+    cleanup();
+
+    // 型安全なコールバック関数の定義
+    const handleTelegramAuth = async (user: TelegramUser) => {
       try {
         console.log('Telegram auth received:', user);
 
@@ -119,6 +129,9 @@ export function Connect() {
       }
     };
 
+    // 型安全なコールバックの設定
+    window.onTelegramAuth = handleTelegramAuth;
+
     const script = document.createElement('script');
     script.async = true;
     script.src = 'https://telegram.org/js/telegram-widget.js?22';
@@ -129,10 +142,8 @@ export function Connect() {
 
     container.appendChild(script);
 
-    return () => {
-      container.innerHTML = '';
-      window.onTelegramAuth = undefined;
-    };
+    // クリーンアップ関数を返す
+    return cleanup;
   }, [mounted, address, isConnected, signMessageAsync]);
 
   if (!mounted) return null;
