@@ -99,10 +99,11 @@ export function Connect() {
         if (error) throw error;
 
         // 連携完了通知の送信
-        const response = await fetch('/functions/v1/telegram-bot', {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/telegram-bot`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
           },
           body: JSON.stringify({
             type: 'Connected',
