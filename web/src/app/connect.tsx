@@ -75,7 +75,7 @@ export function Connect() {
 
         window.Telegram.Login.auth(
           {
-            bot_id: 'phi_box_bot',
+            bot_id: '7338204979',
             element: loginButton,
             onAuth: async (user: TelegramUser) => {
               console.log('Telegram auth received:', user);
