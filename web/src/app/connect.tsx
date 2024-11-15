@@ -2,9 +2,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAccount, useSignMessage } from 'wagmi';
+import { useAccount, useSignMessage, useConnect, useDisconnect } from 'wagmi';
 import { createClient } from '@supabase/supabase-js';
 import { verifyMessage } from 'viem';
+import { injected } from 'wagmi/connectors';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
 
@@ -23,6 +24,8 @@ declare global {
 export function Connect() {
   const [mounted, setMounted] = useState(false);
   const { address, isConnected } = useAccount();
+  const { connect } = useConnect();
+  const { disconnect } = useDisconnect();
   const { signMessageAsync } = useSignMessage();
   const [signature, setSignature] = useState<`0x${string}`>();
   const [message, setMessage] = useState<string>();
@@ -68,6 +71,7 @@ export function Connect() {
       script.setAttribute('data-size', 'large');
       script.setAttribute('data-onauth', 'handleTelegramAuth');
       script.setAttribute('data-request-access', 'write');
+      script.setAttribute('data-radius', '8');
 
       container.appendChild(script);
     }
@@ -127,15 +131,54 @@ export function Connect() {
     <div className='space-y-8 w-full max-w-md'>
       <h2 className='text-2xl font-bold text-center'>Connect with Telegram</h2>
 
-      {isConnected && !signature ? (
-        <button onClick={signMessage} className='w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600'>
-          Sign to verify wallet ownership
-        </button>
-      ) : signature ? (
-        <div id='telegram-login' className='flex justify-center' />
-      ) : null}
+      {!isConnected ? (
+        // Step 1: ウォレット接続
+        <div className='space-y-4'>
+          <p className='text-center text-gray-600'>Step 1: Connect your wallet to verify ownership</p>
+          <button
+            onClick={() => connect({ connector: injected() })}
+            className='w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors'
+          >
+            Connect Wallet
+          </button>
+        </div>
+      ) : (
+        <div className='space-y-6'>
+          {!signature ? (
+            // Step 2: 署名
+            <div className='space-y-4'>
+              <p className='text-center text-gray-600'>Step 2: Sign message to verify wallet ownership</p>
+              <button
+                onClick={signMessage}
+                className='w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors'
+              >
+                Sign Message
+              </button>
+            </div>
+          ) : (
+            // Step 3: Telegram連携
+            <div className='space-y-4'>
+              <p className='text-center text-gray-600'>Step 3: Connect your Telegram account</p>
+              <div id='telegram-login' className='flex justify-center' />
+            </div>
+          )}
 
-      {address && <div className='text-sm text-gray-600 text-center'>Connected wallet: {address}</div>}
+          {/* ウォレット情報と切断ボタン */}
+          <div className='space-y-2 pt-4 border-t border-gray-200'>
+            <div className='text-sm text-gray-600 text-center break-all'>Connected wallet: {address}</div>
+            <button
+              onClick={() => {
+                disconnect();
+                setSignature(undefined);
+                setMessage(undefined);
+              }}
+              className='w-full px-4 py-2 text-red-500 hover:text-red-600 text-sm transition-colors'
+            >
+              Disconnect Wallet
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
