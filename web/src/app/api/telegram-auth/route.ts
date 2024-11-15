@@ -6,7 +6,7 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 function validateTelegramData(data: Omit<TelegramUser, 'hash'>, hash: string): boolean {
   if (!BOT_TOKEN) {
-    throw new Error('TELEGRAM_BOT_TOKEN is not configured');
+    throw new Error('TELEGRAM_BOT_TOKEN is not configured!');
   }
 
   const secretKey = crypto.createHash('sha256').update(BOT_TOKEN).digest();
