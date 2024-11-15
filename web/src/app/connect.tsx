@@ -16,10 +16,19 @@ interface TelegramUser {
   hash: string;
 }
 
-// 型安全なグローバル定義
+// Telegramの型定義
 declare global {
   interface Window {
-    onTelegramAuth: ((user: TelegramUser) => void) | null;
+    Telegram?: {
+      Login: {
+        auth: (config: {
+          bot_id: string;
+          element: HTMLElement;
+          onAuth: (user: TelegramUser) => void;
+          request_access?: boolean;
+        }) => void;
+      };
+    };
   }
 }
 
@@ -43,107 +52,121 @@ export function Connect() {
     const container = document.getElementById('telegram-login');
     if (!container) return;
 
-    // クリーンアップ用の関数
-    const cleanup = () => {
-      container.innerHTML = '';
-      // 型安全なクリーンアップ
-      window.onTelegramAuth = null;
-    };
+    // クリーンアップ
+    container.innerHTML = '';
 
-    // 初期クリーンアップ
-    cleanup();
+    // Telegramスクリプトの読み込み
+    const script = document.createElement('script');
+    script.src = 'https://telegram.org/js/telegram-widget.js?22';
+    script.async = true;
 
-    // 型安全なコールバック関数の定義
-    const handleTelegramAuth = async (user: TelegramUser) => {
+    // スクリプトがロードされたら初期化
+    script.onload = () => {
+      if (!window.Telegram?.Login) {
+        console.error('Telegram Login not available');
+        setError('Failed to load Telegram login');
+        return;
+      }
+
+      const loginButton = document.createElement('div');
+      container.appendChild(loginButton);
+
       try {
-        console.log('Telegram auth received:', user);
+        window.Telegram.Login.auth({
+          bot_id: 'phi_box_bot',
+          element: loginButton,
+          request_access: true,
+          onAuth: async (user) => {
+            try {
+              console.log('Telegram auth received:', user);
 
-        if (!address) {
-          throw new Error('Wallet not connected');
-        }
+              if (!address) {
+                throw new Error('Wallet not connected');
+              }
 
-        // 署名用のメッセージを作成
-        const timestamp = Date.now();
-        const nonce = Math.floor(Math.random() * 1000000);
-        const messageToSign = JSON.stringify({
-          action: 'telegram-connect',
-          telegramId: user.id,
-          walletAddress: address,
-          timestamp: timestamp,
-          nonce: nonce,
-        });
+              // 署名用のメッセージを作成
+              const timestamp = Date.now();
+              const nonce = Math.floor(Math.random() * 1000000);
+              const messageToSign = JSON.stringify({
+                action: 'telegram-connect',
+                telegramId: user.id,
+                walletAddress: address,
+                timestamp: timestamp,
+                nonce: nonce,
+              });
 
-        console.log('Requesting signature for message:', messageToSign);
+              console.log('Requesting signature for message:', messageToSign);
 
-        // メッセージの署名
-        const signature = await signMessageAsync({ message: messageToSign });
+              // メッセージの署名
+              const signature = await signMessageAsync({ message: messageToSign });
 
-        // 署名の検証
-        const verified = await verifyMessage({
-          address: address as `0x${string}`,
-          message: messageToSign,
-          signature,
-        });
-
-        if (!verified) {
-          throw new Error('Signature verification failed');
-        }
-
-        // Save to DB
-        const { error: dbError } = await supabase.from('wallet_telegram_mapping').upsert({
-          wallet_address: address.toLowerCase(),
-          telegram_user_id: user.id,
-        });
-
-        if (dbError) throw dbError;
-
-        // Notify with signature
-        const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/telegram-bot`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify({
-            type: 'Connected',
-            data: {
-              telegramId: user.id,
-              walletAddress: address,
-              timestamp: timestamp,
-              signature: {
+              // 署名の検証
+              const verified = await verifyMessage({
+                address: address as `0x${string}`,
                 message: messageToSign,
-                signature: signature,
-              },
-            },
-          }),
+                signature,
+              });
+
+              if (!verified) {
+                throw new Error('Signature verification failed');
+              }
+
+              // Save to DB
+              const { error: dbError } = await supabase.from('wallet_telegram_mapping').upsert({
+                wallet_address: address.toLowerCase(),
+                telegram_user_id: user.id,
+              });
+
+              if (dbError) throw dbError;
+
+              // Notify with signature
+              const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/telegram-bot`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+                },
+                body: JSON.stringify({
+                  type: 'Connected',
+                  data: {
+                    telegramId: user.id,
+                    walletAddress: address,
+                    timestamp: timestamp,
+                    signature: {
+                      message: messageToSign,
+                      signature: signature,
+                    },
+                  },
+                }),
+              });
+
+              if (!response.ok) {
+                throw new Error('Failed to send telegram notification');
+              }
+
+              setSuccess(true);
+            } catch (err) {
+              console.error('Connection error:', err);
+              setError(err instanceof Error ? err.message : 'Failed to connect');
+            }
+          },
         });
-
-        if (!response.ok) {
-          throw new Error('Failed to send telegram notification');
-        }
-
-        setSuccess(true);
       } catch (err) {
-        console.error('Connection error:', err);
-        setError(err instanceof Error ? err.message : 'Failed to connect');
+        console.error('Telegram widget initialization error:', err);
+        setError('Failed to initialize Telegram login');
       }
     };
 
-    // 型安全なコールバックの設定
-    window.onTelegramAuth = handleTelegramAuth;
-
-    const script = document.createElement('script');
-    script.async = true;
-    script.src = 'https://telegram.org/js/telegram-widget.js?22';
-    script.setAttribute('data-telegram-login', 'phi_box_bot');
-    script.setAttribute('data-size', 'large');
-    script.setAttribute('data-onauth', 'onTelegramAuth');
-    script.setAttribute('data-request-access', 'write');
+    script.onerror = () => {
+      console.error('Failed to load Telegram widget script');
+      setError('Failed to load Telegram login');
+    };
 
     container.appendChild(script);
 
-    // クリーンアップ関数を返す
-    return cleanup;
+    return () => {
+      container.innerHTML = '';
+    };
   }, [mounted, address, isConnected, signMessageAsync]);
 
   if (!mounted) return null;
