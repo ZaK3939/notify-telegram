@@ -18,10 +18,9 @@ interface TelegramUser {
   hash: string;
 }
 
-// TypeScriptの型定義を修正
 declare global {
   interface Window {
-    handleTelegramAuth?: (user: TelegramUser) => Promise<void>;
+    onTelegramAuth?: (user: TelegramUser) => void;
   }
 }
 
@@ -38,6 +37,7 @@ export function Connect() {
 
   const handleTelegramAuth = useCallback(
     async (user: TelegramUser) => {
+      console.log('Telegram auth callback received:', user);
       if (!address || connecting) {
         console.log('Skipping auth - no address or already connecting');
         return;
@@ -47,19 +47,15 @@ export function Connect() {
         setConnecting(true);
         setError(undefined);
 
-        console.log('Starting Telegram auth process', {
-          userId: user.id,
-          username: user.username,
-          address: address,
-        });
-
+        // メッセージの署名
         const nonce = Math.floor(Math.random() * 1000000);
         const message = `Connect Telegram with ${address} (nonce: ${nonce})`;
         console.log('Requesting signature for message:', message);
 
         const signature = await signMessageAsync({ message });
-        console.log('Obtained signature');
+        console.log('Signature obtained');
 
+        // 署名の検証
         const valid = await verifyMessage({
           address: address as `0x${string}`,
           message,
@@ -70,8 +66,7 @@ export function Connect() {
           throw new Error('Wallet signature verification failed');
         }
 
-        console.log('Signature verified, saving to database');
-
+        // DBへの保存
         const { error: dbError } = await supabase.from('wallet_telegram_mapping').upsert({
           wallet_address: address.toLowerCase(),
           telegram_user_id: user.id,
@@ -82,8 +77,7 @@ export function Connect() {
           throw dbError;
         }
 
-        console.log('Database updated, sending notification');
-
+        // Supabase Function呼び出し
         const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/telegram-bot`, {
           method: 'POST',
           headers: {
@@ -112,7 +106,6 @@ export function Connect() {
           throw new Error('Failed to send telegram notification');
         }
 
-        console.log('Connection process completed successfully');
         setSuccess(true);
       } catch (err) {
         console.error('Connection error:', err);
@@ -134,31 +127,30 @@ export function Connect() {
     const container = document.getElementById('telegram-login');
     if (!container) return;
 
-    // クリーンアップ関数を定義
+    // クリーンアップ関数
     const cleanup = () => {
       container.innerHTML = '';
-      // TypeScript安全な方法でグローバルハンドラを削除
-      if ('handleTelegramAuth' in window) {
-        window.handleTelegramAuth = undefined;
-      }
+      // グローバルコールバックをクリーンアップ
+      window.onTelegramAuth = undefined;
     };
 
-    // 既存のコンテンツをクリア
     cleanup();
 
-    // グローバルハンドラを設定
-    window.handleTelegramAuth = handleTelegramAuth;
+    // グローバルコールバックを設定
+    window.onTelegramAuth = handleTelegramAuth;
 
-    // Telegramウィジェットスクリプトを作成
+    // Telegramウィジェットの設定
     const script = document.createElement('script');
     script.async = true;
     script.src = 'https://telegram.org/js/telegram-widget.js?22';
     script.setAttribute('data-telegram-login', 'phi_box_bot');
     script.setAttribute('data-size', 'medium');
     script.setAttribute('data-userpic', 'true');
-    script.setAttribute('data-onauth', 'handleTelegramAuth');
+    // コールバック名を修正
+    script.setAttribute('data-onauth', 'onTelegramAuth');
     script.setAttribute('data-request-access', 'write');
 
+    // エラーハンドリング
     script.onerror = (error) => {
       console.error('Failed to load Telegram widget:', error);
       setError('Failed to load Telegram login widget');
