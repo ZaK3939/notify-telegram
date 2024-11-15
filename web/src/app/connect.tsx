@@ -18,9 +18,10 @@ interface TelegramUser {
   hash: string;
 }
 
+// TypeScriptの型定義を修正
 declare global {
   interface Window {
-    handleTelegramAuth: (user: TelegramUser) => Promise<void>;
+    handleTelegramAuth?: (user: TelegramUser) => Promise<void>;
   }
 }
 
@@ -35,7 +36,6 @@ export function Connect() {
   const { disconnect } = useDisconnect();
   const { signMessageAsync } = useSignMessage();
 
-  // handleTelegramAuthをuseCallbackでメモ化
   const handleTelegramAuth = useCallback(
     async (user: TelegramUser) => {
       if (!address || connecting) {
@@ -53,7 +53,6 @@ export function Connect() {
           address: address,
         });
 
-        // メッセージの署名
         const nonce = Math.floor(Math.random() * 1000000);
         const message = `Connect Telegram with ${address} (nonce: ${nonce})`;
         console.log('Requesting signature for message:', message);
@@ -61,7 +60,6 @@ export function Connect() {
         const signature = await signMessageAsync({ message });
         console.log('Obtained signature');
 
-        // 署名の検証
         const valid = await verifyMessage({
           address: address as `0x${string}`,
           message,
@@ -74,7 +72,6 @@ export function Connect() {
 
         console.log('Signature verified, saving to database');
 
-        // DBへの保存
         const { error: dbError } = await supabase.from('wallet_telegram_mapping').upsert({
           wallet_address: address.toLowerCase(),
           telegram_user_id: user.id,
@@ -87,7 +84,6 @@ export function Connect() {
 
         console.log('Database updated, sending notification');
 
-        // Supabase Function呼び出し
         const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/telegram-bot`, {
           method: 'POST',
           headers: {
@@ -141,8 +137,10 @@ export function Connect() {
     // クリーンアップ関数を定義
     const cleanup = () => {
       container.innerHTML = '';
-      // グローバルハンドラをクリーンアップ
-      delete window.handleTelegramAuth;
+      // TypeScript安全な方法でグローバルハンドラを削除
+      if ('handleTelegramAuth' in window) {
+        window.handleTelegramAuth = undefined;
+      }
     };
 
     // 既存のコンテンツをクリア
@@ -161,7 +159,6 @@ export function Connect() {
     script.setAttribute('data-onauth', 'handleTelegramAuth');
     script.setAttribute('data-request-access', 'write');
 
-    // エラーハンドリングを追加
     script.onerror = (error) => {
       console.error('Failed to load Telegram widget:', error);
       setError('Failed to load Telegram login widget');
@@ -169,11 +166,9 @@ export function Connect() {
 
     container.appendChild(script);
 
-    // クリーンアップ関数を返す
     return cleanup;
   }, [mounted, isConnected, handleTelegramAuth]);
 
-  // Component not mounted yet
   if (!mounted) return null;
 
   return (
