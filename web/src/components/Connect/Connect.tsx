@@ -1,53 +1,35 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAccount, useSignMessage, useConnect, useDisconnect } from 'wagmi';
 import { createClient } from '@supabase/supabase-js';
 import { verifyMessage } from 'viem';
 import { injected } from 'wagmi/connectors';
+import type { TelegramUser } from '@/types/telegram';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
-
-interface TelegramUser {
-  id: number;
-  first_name?: string;
-  username?: string;
-  auth_date: number;
-  hash: string;
-}
 
 export function Connect() {
   const [mounted, setMounted] = useState(false);
   const [error, setError] = useState<string>();
   const [success, setSuccess] = useState(false);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
 
   const { address, isConnected } = useAccount();
   const { connect } = useConnect();
   const { disconnect } = useDisconnect();
   const { signMessageAsync } = useSignMessage();
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const handleTelegramAuth = useCallback(
+    async (user: TelegramUser) => {
+      if (!address || isAuthenticating) return;
 
-  useEffect(() => {
-    if (!mounted || !isConnected) return;
-
-    const container = document.getElementById('telegram-login');
-    if (!container) return;
-
-    container.innerHTML = '';
-
-    // グローバルコールバック関数
-    const handleTelegramAuth = async (user: TelegramUser) => {
       try {
+        setIsAuthenticating(true);
+        setError(undefined);
         console.log('Telegram auth received:', user);
 
-        if (!address) {
-          throw new Error('Wallet not connected');
-        }
-
-        // Telegram認証の検証
+        // Validate with API
         const authResponse = await fetch('/api/telegram-auth', {
           method: 'POST',
           headers: {
@@ -61,7 +43,7 @@ export function Connect() {
           throw new Error(error.error || 'Telegram authentication failed');
         }
 
-        // 署名用のメッセージを作成
+        // Create signature message
         const timestamp = Date.now();
         const nonce = Math.floor(Math.random() * 1000000);
         const messageToSign = JSON.stringify({
@@ -74,10 +56,10 @@ export function Connect() {
 
         console.log('Requesting signature for message:', messageToSign);
 
-        // メッセージの署名
+        // Sign message
         const signature = await signMessageAsync({ message: messageToSign });
 
-        // 署名の検証
+        // Verify signature
         const verified = await verifyMessage({
           address: address as `0x${string}`,
           message: messageToSign,
@@ -88,7 +70,7 @@ export function Connect() {
           throw new Error('Signature verification failed');
         }
 
-        // Save to DB
+        // Save to database
         const { error: dbError } = await supabase.from('wallet_telegram_mapping').upsert({
           wallet_address: address.toLowerCase(),
           telegram_user_id: user.id,
@@ -96,7 +78,7 @@ export function Connect() {
 
         if (dbError) throw dbError;
 
-        // Notify with signature
+        // Send notification
         const notifyResponse = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/telegram-bot`, {
           method: 'POST',
           headers: {
@@ -125,33 +107,51 @@ export function Connect() {
       } catch (err) {
         console.error('Connection error:', err);
         setError(err instanceof Error ? err.message : 'Failed to connect');
+      } finally {
+        setIsAuthenticating(false);
       }
+    },
+    [address, isAuthenticating, signMessageAsync],
+  );
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted || !isConnected) return;
+
+    const container = document.getElementById('telegram-login');
+    if (!container) return;
+
+    const cleanup = () => {
+      container.innerHTML = '';
+      window.onTelegramAuth = undefined;
     };
 
-    // グローバルスコープに関数を追加
+    cleanup();
+
+    // Set global callback
     window.onTelegramAuth = handleTelegramAuth;
 
-    // Telegramスクリプトを追加
+    // Load Telegram script
     const script = document.createElement('script');
+    script.async = true;
     script.src = 'https://telegram.org/js/telegram-widget.js?22';
     script.setAttribute('data-telegram-login', 'phi_box_bot');
     script.setAttribute('data-size', 'large');
     script.setAttribute('data-onauth', 'onTelegramAuth');
     script.setAttribute('data-request-access', 'write');
-    script.async = true;
 
-    script.onerror = () => {
-      console.error('Failed to load Telegram widget script');
-      setError('Failed to load Telegram login');
+    script.onerror = (error) => {
+      console.error('Failed to load Telegram widget:', error);
+      setError('Failed to load Telegram login widget');
     };
 
     container.appendChild(script);
 
-    return () => {
-      container.innerHTML = '';
-      window.onTelegramAuth = undefined;
-    };
-  }, [mounted, address, isConnected, signMessageAsync]);
+    return cleanup;
+  }, [mounted, isConnected, handleTelegramAuth]);
 
   if (!mounted) return null;
 
@@ -168,12 +168,19 @@ export function Connect() {
         </div>
       )}
 
+      {isAuthenticating && (
+        <div className='p-4 bg-blue-50 text-blue-600 rounded-lg text-center'>
+          <p>Authenticating...</p>
+        </div>
+      )}
+
       {!isConnected ? (
         <div className='space-y-4'>
           <p className='text-center text-gray-600'>Connect your wallet to get started</p>
           <button
             onClick={() => connect({ connector: injected() })}
             className='w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors'
+            disabled={isAuthenticating}
           >
             Connect Wallet
           </button>
@@ -181,7 +188,9 @@ export function Connect() {
       ) : (
         <div className='space-y-6'>
           <div className='space-y-4'>
-            <p className='text-center text-gray-600'>Connect your Telegram account</p>
+            <p className='text-center text-gray-600'>
+              {isAuthenticating ? 'Connecting...' : 'Connect your Telegram account'}
+            </p>
             <div id='telegram-login' className='flex justify-center' />
           </div>
 
@@ -194,6 +203,7 @@ export function Connect() {
                 setError(undefined);
               }}
               className='w-full px-4 py-2 text-red-500 hover:text-red-600 text-sm transition-colors'
+              disabled={isAuthenticating}
             >
               Disconnect Wallet
             </button>

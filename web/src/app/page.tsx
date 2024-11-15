@@ -1,14 +1,9 @@
-import { Providers } from './providers';
-import { Connect } from './connect';
+import { Connect } from '../components/Connect';
 
 export default function Home() {
   return (
-    <Providers>
-      <main className='min-h-screen p-4 flex flex-col items-center justify-center'>
-        <div className='w-full max-w-md'>
-          <Connect />
-        </div>
-      </main>
-    </Providers>
+    <main className='flex min-h-screen flex-col items-center justify-center p-4'>
+      <Connect />
+    </main>
   );
 }
