@@ -8,8 +8,30 @@ export interface TelegramUser {
   hash: string;
 }
 
+export interface TelegramLoginWidgetConfig {
+  bot_id: string;
+  element?: HTMLElement;
+  onAuth: (user: TelegramUser) => void | Promise<void>;
+  requestAccess?: boolean;
+  size?: 'small' | 'medium' | 'large';
+  radius?: number | 'default';
+  lang?: string;
+}
+
+export interface TelegramLoginWidget {
+  auth: (config: TelegramLoginWidgetConfig) => void;
+}
+
+export interface TelegramSDK {
+  Login: {
+    auth: (config: TelegramLoginWidgetConfig) => void;
+  };
+}
+
 declare global {
   interface Window {
-    onTelegramAuth?: (user: TelegramUser) => void;
+    Telegram?: TelegramSDK;
+    onTelegramAuth: ((user: TelegramUser) => Promise<void>) | undefined;
+    handleTelegramAuth: ((user: TelegramUser) => Promise<void>) | undefined;
   }
 }
