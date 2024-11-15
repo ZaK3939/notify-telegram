@@ -5,6 +5,7 @@ import { useAccount, useSignMessage, useConnect, useDisconnect } from 'wagmi';
 import { createClient } from '@supabase/supabase-js';
 import { verifyMessage } from 'viem';
 import { injected } from 'wagmi/connectors';
+import crypto from 'crypto';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
 
@@ -12,6 +13,7 @@ interface TelegramUser {
   id: number;
   first_name?: string;
   username?: string;
+  photo_url?: string;
   auth_date: number;
   hash: string;
 }
@@ -20,6 +22,32 @@ declare global {
   interface Window {
     handleTelegramAuth: (user: TelegramUser) => void;
   }
+}
+
+// Telegram認証データの検証関数
+function verifyTelegramAuth(telegramData: TelegramUser): boolean {
+  const botToken = process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN;
+  if (!botToken) {
+    console.error('Telegram bot token is not set');
+    return false;
+  }
+
+  const { hash, ...data } = telegramData;
+
+  // データチェック文字列の作成
+  const checkString = Object.entries(data)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('\n');
+
+  // 秘密鍵の生成
+  const secretKey = crypto.createHash('sha256').update(botToken).digest();
+
+  // HMACの計算
+  const hmac = crypto.createHmac('sha256', secretKey).update(checkString).digest('hex');
+
+  // ハッシュの比較
+  return hmac === hash;
 }
 
 export function Connect() {
@@ -48,9 +76,9 @@ export function Connect() {
       script.setAttribute('data-telegram-login', 'phi_box_bot');
       script.setAttribute('data-size', 'large');
       script.setAttribute('data-radius', '8');
-      script.setAttribute('lang', 'en');
-      script.setAttribute('data-onauth', 'handleTelegramAuth');
       script.setAttribute('data-request-access', 'write');
+      script.setAttribute('data-onauth', 'handleTelegramAuth');
+      script.setAttribute('data-auth-url', `${process.env.NEXT_PUBLIC_APP_URL}/api/telegram-auth`);
 
       container.appendChild(script);
     }
@@ -61,6 +89,18 @@ export function Connect() {
       try {
         setConnecting(true);
         setError(undefined);
+
+        // Telegram認証データの検証
+        if (!verifyTelegramAuth(user)) {
+          throw new Error('Invalid Telegram authentication');
+        }
+
+        // 認証の有効期限チェック（1時間）
+        const authTimestamp = user.auth_date * 1000; // convert to milliseconds
+        const now = Date.now();
+        if (now - authTimestamp > 3600000) {
+          throw new Error('Telegram authentication expired');
+        }
 
         // メッセージの署名
         const nonce = Math.floor(Math.random() * 1000000);
@@ -81,7 +121,7 @@ export function Connect() {
         // DBへの保存
         const { error: dbError } = await supabase.from('wallet_telegram_mapping').upsert({
           wallet_address: address.toLowerCase(),
-          telegram_chat_id: user.id,
+          telegram_user_id: user.id,
         });
 
         if (dbError) throw dbError;
