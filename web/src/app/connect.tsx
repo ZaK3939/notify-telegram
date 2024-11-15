@@ -74,7 +74,17 @@ export function Connect() {
 
       // Define callback function
       window.handleTelegramAuth = async (user: TelegramUser) => {
-        if (!address || connecting) return;
+        console.log('Telegram auth data:', {
+          name: user.first_name,
+          lastName: user.last_name,
+          username: user.username,
+          id: user.id,
+          photoUrl: user.photo_url,
+        });
+        if (!address || connecting) {
+          console.error('Invalid address or already connecting');
+          return;
+        }
 
         try {
           setConnecting(true);
