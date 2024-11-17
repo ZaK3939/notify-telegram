@@ -117,26 +117,26 @@ export function Connect() {
     try {
       setError(undefined);
       if (isMobile) {
-        // モバイルの場合はWalletConnectを優先
-        connect({
-          connector: walletConnect({
-            projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
-            showQrModal: true,
-            metadata: {
-              name: 'Your App Name',
-              description: 'Your app description',
-              url: window.location.origin,
-              icons: [`${window.location.origin}/app-icon.png`],
-            },
-          }),
+        // モバイルの場合はWalletConnectを使用
+        const connector = await walletConnect({
+          projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
+          showQrModal: true,
+          metadata: {
+            name: 'PHI BOX', // アプリ名を実際のものに変更
+            description: 'Connect your wallet with Telegram',
+            url: window.location.origin,
+            icons: [`${window.location.origin}/logo.png`], // 実際のロゴパスに変更
+          },
         });
+
+        await connect({ connector });
       } else {
         // デスクトップの場合はMetaMask等のinjectedを使用
-        connect({ connector: injected() });
+        await connect({ connector: injected() });
       }
     } catch (err) {
       console.error('Wallet connection error:', err);
-      setError('Failed to connect wallet. Please try again.');
+      setError(err instanceof Error ? err.message : 'Failed to connect wallet. Please try again.');
     }
   };
 
