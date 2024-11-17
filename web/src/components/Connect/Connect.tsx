@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAccount, useSignMessage, useConnect, useDisconnect } from 'wagmi';
 import { createClient } from '@supabase/supabase-js';
 import { verifyMessage } from 'viem';
-import { injected } from 'wagmi/connectors';
+import { injected, walletConnect } from 'wagmi/connectors';
 import type { TelegramUser } from '@/types/telegram';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
@@ -14,6 +14,7 @@ export function Connect() {
   const [error, setError] = useState<string | undefined>();
   const [success, setSuccess] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isMobile] = useState(() => typeof window !== 'undefined' && /Mobi|Android/i.test(window.navigator.userAgent));
 
   const { address, isConnected } = useAccount();
   const { connect } = useConnect();
@@ -106,6 +107,39 @@ export function Connect() {
     [address, isProcessing, signMessageAsync],
   );
 
+  const handleConnect = async () => {
+    try {
+      setError(undefined);
+      if (isMobile) {
+        // モバイルの場合はWalletConnectを優先
+        connect({
+          connector: walletConnect({
+            projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
+            showQrModal: true,
+            metadata: {
+              name: 'Your App Name',
+              description: 'Your app description',
+              url: window.location.origin,
+              icons: [`${window.location.origin}/app-icon.png`],
+            },
+          }),
+        });
+      } else {
+        // デスクトップの場合はMetaMask等のinjectedを使用
+        connect({ connector: injected() });
+      }
+    } catch (err) {
+      console.error('Wallet connection error:', err);
+      setError('Failed to connect wallet. Please try again.');
+    }
+  };
+
+  const handleDisconnect = () => {
+    disconnect();
+    setSuccess(false);
+    setError(undefined);
+  };
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -184,11 +218,11 @@ export function Connect() {
         <div className='space-y-4'>
           <p className='text-center text-gray-600'>Connect your wallet to get started</p>
           <button
-            onClick={() => connect({ connector: injected() })}
+            onClick={handleConnect}
             className='w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors disabled:opacity-50'
             disabled={isProcessing}
           >
-            Connect Wallet
+            {isMobile ? 'Connect with WalletConnect' : 'Connect Wallet'}
           </button>
         </div>
       ) : (
@@ -203,11 +237,7 @@ export function Connect() {
           <div className='space-y-2 pt-4 border-t border-gray-200'>
             <div className='text-sm text-gray-600 text-center break-all'>Connected: {address}</div>
             <button
-              onClick={() => {
-                disconnect();
-                setSuccess(false);
-                setError(undefined);
-              }}
+              onClick={handleDisconnect}
               className='w-full px-4 py-2 text-red-500 hover:text-red-600 text-sm transition-colors disabled:opacity-50'
               disabled={isProcessing}
             >
