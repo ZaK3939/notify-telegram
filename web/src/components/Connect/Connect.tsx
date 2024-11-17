@@ -61,11 +61,17 @@ export function Connect() {
         console.log('Signature verified successfully');
 
         console.log('Saving connection to database...');
-        const { error: dbError } = await supabase.from('wallet_telegram_mapping').upsert({
-          wallet_address: address.toLowerCase(),
-          telegram_user_id: user.id,
-          created_at: new Date().toISOString(),
-        });
+        const { error: dbError } = await supabase.from('wallet_telegram_mapping').upsert(
+          {
+            wallet_address: address.toLowerCase(),
+            telegram_user_id: user.id,
+            created_at: new Date().toISOString(),
+          },
+          {
+            onConflict: 'wallet_address,telegram_user_id', // 重複を判定するカラム
+            ignoreDuplicates: false, // falseにすることで重複時に上書き
+          },
+        );
 
         if (dbError) {
           console.error('Database error:', dbError);
