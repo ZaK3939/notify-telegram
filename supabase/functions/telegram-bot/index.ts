@@ -203,7 +203,7 @@ Your wallet has been disconnected:
   📊 *Daily Claim Report (UTC)*
   
   Date: ${utcDate}
-  Total Claims: ${quantity} Base Art${quantity > 1 ? 's' : ''}
+  Total Claims: ${quantity} Art${quantity > 1 ? 's' : ''}
                 `,
               );
             } catch (error) {

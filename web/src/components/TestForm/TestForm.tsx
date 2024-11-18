@@ -1,6 +1,7 @@
+'use client';
 import React, { useState } from 'react';
 
-const TestForm = () => {
+export const TestForm = () => {
   const [address, setAddress] = useState('');
   const [quantity, setQuantity] = useState('');
 

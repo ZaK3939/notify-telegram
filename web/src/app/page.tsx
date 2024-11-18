@@ -1,4 +1,4 @@
-import TestForm from '../components/TestForm';
+import { TestForm } from '@/components/TestForm';
 import { Connect } from '../components/Connect';
 import { Providers } from './providers';
 
