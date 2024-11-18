@@ -16,6 +16,18 @@ interface ConnectedEvent {
   timestamp: string;
 }
 
+interface DisconnectedEvent {
+  walletAddress: string;
+}
+
+interface DailyClaimEvent {
+  artists: {
+    artist: string;
+    quantity: number;
+  }[];
+  date: string;
+}
+
 interface RewardsDepositEvent {
   receiver: string;
   minter: string;
@@ -68,7 +80,6 @@ serve(async (req: Request) => {
         const normalizedWalletAddress = walletAddress.toLowerCase();
 
         try {
-          // 既存のマッピングを削除
           const { error: deleteError } = await supabase
             .from('wallet_telegram_mapping')
             .delete()
@@ -78,7 +89,6 @@ serve(async (req: Request) => {
             console.error('Database delete error:', deleteError);
           }
 
-          // 少し待機して新しいマッピングを登録
           await new Promise((resolve) => setTimeout(resolve, 200));
 
           const { error: upsertError } = await supabase.from('wallet_telegram_mapping').upsert(
@@ -96,7 +106,6 @@ serve(async (req: Request) => {
             throw upsertError;
           }
 
-          // ウェルカムメッセージの送信
           await sendTelegramMessage(
             telegramId,
             `
@@ -104,12 +113,6 @@ serve(async (req: Request) => {
 
 Your Telegram account is now linked to:
 \`${walletAddress}\`
-
-You will receive notifications for:
-📥 Receiver Events
-🔨 Minter Events
-🤝 Referral Events
-✅ Verifier Events
             `,
           );
 
@@ -126,6 +129,97 @@ You will receive notifications for:
         }
       }
 
+      case 'Disconnected': {
+        const { walletAddress } = data as DisconnectedEvent;
+        const normalizedWalletAddress = walletAddress.toLowerCase();
+
+        try {
+          const { data: userData, error: selectError } = await supabase
+            .from('wallet_telegram_mapping')
+            .select('telegram_user_id')
+            .eq('wallet_address', normalizedWalletAddress)
+            .single();
+
+          if (selectError) {
+            console.error('Database select error:', selectError);
+            throw selectError;
+          }
+
+          if (userData) {
+            await sendTelegramMessage(
+              userData.telegram_user_id,
+              `
+❌ *Wallet Disconnected*
+
+Your wallet has been disconnected:
+\`${walletAddress}\`
+              `,
+            );
+
+            const { error: deleteError } = await supabase
+              .from('wallet_telegram_mapping')
+              .delete()
+              .eq('wallet_address', normalizedWalletAddress);
+
+            if (deleteError) {
+              console.error('Database delete error:', deleteError);
+              throw deleteError;
+            }
+          }
+
+          return new Response(JSON.stringify({ success: true, message: 'Disconnect notification sent' }), {
+            status: 200,
+            headers: {
+              ...corsHeaders,
+              'Content-Type': 'application/json',
+            },
+          });
+        } catch (error) {
+          console.error('Database error:', error);
+          throw error;
+        }
+      }
+      case 'DailyClaim': {
+        const { artists } = data as DailyClaimEvent;
+        const utcDate = new Date().toISOString().split('T')[0];
+
+        for (const { artist, quantity } of artists) {
+          const { data: userData, error: dbError } = await supabase
+            .from('wallet_telegram_mapping')
+            .select('telegram_user_id')
+            .eq('wallet_address', artist.toLowerCase())
+            .single();
+
+          if (dbError) {
+            console.error(`Database error for artist ${artist}:`, dbError);
+            continue;
+          }
+
+          if (userData) {
+            try {
+              await sendTelegramMessage(
+                userData.telegram_user_id,
+                `
+  📊 *Daily Claim Report (UTC)*
+  
+  Date: ${utcDate}
+  Total Claims: ${quantity} Base Art${quantity > 1 ? 's' : ''}
+                `,
+              );
+            } catch (error) {
+              console.error(`Failed to send notification to artist ${artist}:`, error);
+            }
+          }
+        }
+
+        return new Response(JSON.stringify({ success: true, message: 'Daily claim notifications sent' }), {
+          status: 200,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+          },
+        });
+      }
       case 'RewardsDeposit': {
         const { receiver, minter, referral, verifier, transactionHash } = data as RewardsDepositEvent;
         const addresses = [receiver, minter, referral, verifier];
