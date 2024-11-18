@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAccount, useSignMessage, useConnect, useDisconnect } from 'wagmi';
 import { createClient } from '@supabase/supabase-js';
 import { verifyMessage } from 'viem';
-import { injected, walletConnect } from 'wagmi/connectors';
+import { walletConnect } from 'wagmi/connectors';
 import type { TelegramUser } from '@/types/telegram';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
@@ -14,7 +14,6 @@ export function Connect() {
   const [error, setError] = useState<string | undefined>();
   const [success, setSuccess] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [isMobile] = useState(() => typeof window !== 'undefined' && /Mobi|Android/i.test(window.navigator.userAgent));
 
   const { address, isConnected } = useAccount();
   const { connect } = useConnect();
@@ -68,8 +67,8 @@ export function Connect() {
             created_at: new Date().toISOString(),
           },
           {
-            onConflict: 'wallet_address,telegram_user_id', // 重複を判定するカラム
-            ignoreDuplicates: false, // falseにすることで重複時に上書き
+            onConflict: 'wallet_address,telegram_user_id',
+            ignoreDuplicates: false,
           },
         );
 
@@ -116,24 +115,18 @@ export function Connect() {
   const handleConnect = async () => {
     try {
       setError(undefined);
-      if (isMobile) {
-        // モバイルの場合はWalletConnectを使用
-        const connector = await walletConnect({
-          projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
-          showQrModal: true,
-          metadata: {
-            name: 'PHI BOX', // アプリ名を実際のものに変更
-            description: 'Connect your wallet with Telegram',
-            url: window.location.origin,
-            icons: [`${window.location.origin}/logo.png`], // 実際のロゴパスに変更
-          },
-        });
+      const connector = await walletConnect({
+        projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
+        showQrModal: true,
+        metadata: {
+          name: 'PHI BOX',
+          description: 'Connect your wallet with Telegram',
+          url: window.location.origin,
+          icons: [`${window.location.origin}/logo.png`],
+        },
+      });
 
-        await connect({ connector });
-      } else {
-        // デスクトップの場合はMetaMask等のinjectedを使用
-        await connect({ connector: injected() });
-      }
+      await connect({ connector });
     } catch (err) {
       console.error('Wallet connection error:', err);
       setError(err instanceof Error ? err.message : 'Failed to connect wallet. Please try again.');
@@ -228,7 +221,7 @@ export function Connect() {
             className='w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors disabled:opacity-50'
             disabled={isProcessing}
           >
-            {isMobile ? 'Connect with WalletConnect' : 'Connect Wallet'}
+            Connect with WalletConnect
           </button>
         </div>
       ) : (
