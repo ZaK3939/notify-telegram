@@ -17,3 +17,4 @@ supabase functions deploy telegram-bot --no-verify-jwt
 # デプロイされた function URL の確認
 
 supabase functions describe telegram-bot
+notify

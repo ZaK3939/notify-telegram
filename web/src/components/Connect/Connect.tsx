@@ -116,7 +116,7 @@ export function Connect() {
     try {
       setError(undefined);
       const connector = await walletConnect({
-        projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
+        projectId: process.env.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID!,
         showQrModal: true,
         metadata: {
           name: 'PHI BOX',
